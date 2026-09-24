@@ -1,0 +1,1 @@
+{"name":"slimo-desktop","version":"1.0.0","description":"Slimo - tutor de inglês em forma de slime","main":"main.js","scripts":{"start":"electron ."},"dependencies":{"msedge-tts":"^2.0.0"},"devDependencies":{"electron":"^33.0.0"}}

@@ -1,0 +1,59 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:transparent;overflow:hidden;user-select:none;font:14px system-ui,sans-serif;color:#fff}
+body{display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px}
+#sl{cursor:grab;width:150px}#flip{transition:transform .2s}#sl svg{width:150px;display:block;transform-origin:50% 100%}
+#sl.walk svg{animation:hop .5s infinite}#sl.off svg{filter:grayscale(1) brightness(.7);transform:scaleY(.8)}
+#sl.bye svg{animation:wave .7s infinite}
+@keyframes hop{50%{transform:scale(1.08,.9) translateY(-6px)}}@keyframes wave{25%{transform:rotate(-12deg)}75%{transform:rotate(12deg)}}
+.b{background:rgba(18,32,26,.88);border-radius:14px;padding:8px 12px;width:310px;line-height:1.35;box-shadow:0 2px 10px #0006}
+#sub{min-height:20px;max-height:110px;overflow:hidden}#fix{font-size:12.5px;color:#c8f5dc}#fix b{color:#4ade80}
+</style></head><body>
+<div id="sl" class="off"><div id="flip"><svg viewBox="0 0 150 130"><path d="M12 118C4 80 22 20 75 14c53-6 76 62 63 104-2 8-10 8-16 4-8 6-14 6-20 0-8 6-16 6-22 0-8 6-16 6-22 0-8 6-16 6-22 0-6 4-16 6-24 0z" fill="#4ade80" stroke="#15803d" stroke-width="3"/>
+<ellipse cx="45" cy="40" rx="12" ry="6" fill="#fff" opacity=".5" transform="rotate(-25 45 40)"/><circle cx="52" cy="66" r="13" fill="#fff"/><circle cx="98" cy="66" r="13" fill="#fff"/>
+<circle id="pl" cx="52" cy="66" r="6" fill="#111"/><circle id="pr" cx="98" cy="66" r="6" fill="#111"/><ellipse id="mouth" cx="75" cy="98" rx="14" ry="2" fill="#14532d"/></svg></div></div>
+<div class="b" id="sub">Iniciando…</div><div class="b" id="fix" hidden></div>
+<script>
+const $=s=>document.querySelector(s),sub=$('#sub'),sl=$('#sl'),mouth=$('#mouth');
+const norm=t=>t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(),E=x=>String(x||'').replace(/</g,'&lt;');
+let on=false,speaking=false,busy=false,rec=null,ms,TH=0.02;
+const ac2=new AudioContext();
+/* fala com lip-sync real (volume do áudio) e legenda digitada */
+function play(bytes,text){return new Promise(res=>{const a=new Audio(URL.createObjectURL(new Blob([bytes],{type:'audio/mpeg'})));
+ const an=ac2.createAnalyser();an.fftSize=512;ac2.createMediaElementSource(a).connect(an);an.connect(ac2.destination);const d=new Uint8Array(an.fftSize);let i=0,ty;
+ a.onloadedmetadata=()=>{ty=setInterval(()=>{sub.textContent=text.slice(0,++i);if(i>=text.length)clearInterval(ty)},Math.max(20,a.duration*900/text.length))};
+ const lip=setInterval(()=>{an.getByteTimeDomainData(d);let m=0;for(const v of d)m=Math.max(m,Math.abs(v-128));mouth.setAttribute('ry',2+m/128*18)},60);
+ a.onended=a.onerror=()=>{clearInterval(ty);clearInterval(lip);mouth.setAttribute('ry',2);sub.textContent=text;res()};a.play().catch(a.onerror)})}
+function say(s){return new Promise(r=>{const u=new SpeechSynthesisUtterance(s.t),pt=s.l=='pt';u.lang=pt?'pt-BR':'en-US';u.pitch=.6;
+ const v=speechSynthesis.getVoices().find(v=>v.lang.startsWith(pt?'pt':'en')&&/david|mark|daniel|guy|antonio|male/i.test(v.name));if(v)u.voice=v;
+ sub.textContent=s.t;const m=setInterval(()=>mouth.setAttribute('ry',2+Math.random()*12),120);
+ u.onend=u.onerror=()=>{clearInterval(m);mouth.setAttribute('ry',2);r()};speechSynthesis.speak(u)})}
+async function speak(segs){speaking=true;try{for(const s of segs){let b=null;try{b=await api.tts(s.t,s.l)}catch(e){}if(b)await play(b,s.t);else await say(s)}}finally{speaking=false}}
+function showFix(j,text){const f=$('#fix');if(j.fix&&norm(j.fix)!=norm(text)){f.hidden=false;f.innerHTML='O que você disse: “'+E(j.said||text)+'”<br>Forma mais natural: <b>“'+E(j.fix)+'”</b>'+(j.why?'<br>Explicação: '+E(j.why):'')}else f.hidden=true}
+async function ask(text,lang,sys){sub.textContent='…pensando';const scr=!sys&&/tela|screen|olha|vendo|fazendo|doing|tradu|escrito|translate|\bread\b|\bsee\b|\blook\b/i.test(text);
+ const j=await api.chat({text,lang,sys,screen:scr});showFix(j,text);await speak(j.seg)}
+async function powerOn(){on=true;await api.setOn(true);sl.classList.remove('off');const s=await api.getState();
+ if(s.hist.length)await speak([{l:'pt',t:'Bem-vindo de volta! Paramos na nossa conversa sobre '+(s.topic||'nosso último assunto')+'. Quer continuar?'}]);
+ else await ask('[SISTEMA: primeira conversa. Apresente-se como Slimo e pergunte em inglês como foi o dia do aluno.]','portuguese',true)}
+async function powerOff(){on=false;await api.setOn(false);sl.classList.add('bye');
+ await speak([{l:'pt',t:'Tchau! Salvei nossa aula. Até logo!'},{l:'en',t:'See you soon!'}]);sl.classList.remove('bye');sl.classList.add('off');sub.textContent='Sistema desligado 💤 Diga “ligar sistema”.'}
+async function handle(text,lang){const n=norm(text);if(n.length<2||/^(thanks for watching|thank you|obrigad[oa]|you)\W*$/.test(n))return;
+ if(!on){if(/(ligar|iniciar|ativar) (o )?sistema|system on|turn on|wake up/.test(n))await powerOn();return}
+ if(/desligar (o )?sistema|turn off|shut ?down|system off/.test(n))return powerOff();
+ if(/fechar (o )?(aplicativo|app)|(quit|close) (the )?app/.test(n)){await speak([{l:'pt',t:'Até a próxima!'}]);return api.quit()}
+ return ask(text,lang,false)}
+async function heard(b){busy=true;try{const r=await api.stt(b);await handle(r.text,r.lang)}catch(e){sub.textContent='⚠️ '+e.message}finally{busy=false}}
+/* microfone: detecta voz, grava e envia ao Whisper (idioma detectado sozinho) */
+async function mic(){ms=await navigator.mediaDevices.getUserMedia({audio:true});const ac=new AudioContext(),an=ac.createAnalyser();an.fftSize=1024;ac.createMediaStreamSource(ms).connect(an);
+ const buf=new Float32Array(an.fftSize);let last=0;
+ function begin(){const me={chunks:[],t:Date.now(),drop:false};me.mr=new MediaRecorder(ms);me.mr.ondataavailable=e=>me.chunks.push(e.data);
+  me.mr.onstop=async()=>{if(rec===me)rec=null;if(me.drop||Date.now()-me.t<900)return;heard(await new Blob(me.chunks,{type:'audio/webm'}).arrayBuffer())};rec=me;me.mr.start()}
+ setInterval(()=>{an.getFloatTimeDomainData(buf);let s=0;for(const v of buf)s+=v*v;const rms=Math.sqrt(s/buf.length),now=Date.now();
+  if(speaking||busy){if(rec&&rec.mr.state=='recording'){rec.drop=true;rec.mr.stop()}return}
+  if(rms>TH){last=now;if(!rec)begin()}else if(rec&&rec.mr.state=='recording'&&now-last>900)rec.mr.stop()},50)}
+/* arrastar, andar, olhos */
+let off=null;sl.onmousedown=e=>{off={x:e.screenX-screenX,y:e.screenY-screenY};api.dragStart()};
+onmousemove=e=>{if(off)api.drag(e.screenX-off.x,e.screenY-off.y)};onmouseup=()=>{if(off){off=null;api.dragEnd()}};
+api.on('walk',d=>{sl.classList.toggle('walk',!!d);if(d)$('#flip').style.transform='scaleX('+(d<0?-1:1)+')'});
+api.on('cursor',({x,y})=>{const a=Math.atan2(y-70,x-170);for(const id of['pl','pr'])$('#'+id).style.transform='translate('+Math.cos(a)*5+'px,'+Math.sin(a)*5+'px)'});
+(async()=>{try{await mic();await powerOn()}catch(e){sub.textContent='⚠️ '+e.message}})();
+</script></body></html>
